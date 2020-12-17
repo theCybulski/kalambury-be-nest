@@ -5,7 +5,6 @@ import { RoomsModule } from '../rooms/rooms.module';
 
 @Module({
   imports: [RoomsModule],
-  exports: [ChatGateway],
   controllers: [],
   providers: [ChatGateway],
 })

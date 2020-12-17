@@ -6,14 +6,12 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { forwardRef, Inject, Logger } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 
 import { PlayerEntity } from '../player/player.entity';
 import { socketErrorToClient } from '../utils/socket-error-to-client';
 import { wsEvents } from '../constants/wsEvents';
 import { PlayerInterface } from '../player/player.interface';
-import { ChatGateway } from '../chat/chat.gateway';
-import { sendSystemMessage } from '../utils/send-system-message';
 import { RoomsService } from './rooms.service';
 
 @WebSocketGateway({ namespace: '/room' })
@@ -22,8 +20,6 @@ export class RoomGateway implements OnGatewayInit, OnGatewayDisconnect {
 
   constructor(
     private roomsService: RoomsService,
-    @Inject(forwardRef(() => ChatGateway))
-    private chatGateway: ChatGateway,
   ) {
   }
 
@@ -56,7 +52,6 @@ export class RoomGateway implements OnGatewayInit, OnGatewayDisconnect {
 
       client.emit(wsEvents.toClient.joinedRoom, { player, room: roomForClient });
       this.wss.to(roomId).emit(wsEvents.toClient.round.updatePlayers, Object.values(room.players));
-      sendSystemMessage(this.chatGateway.wss, roomId, `${player.name} joined the room`);
       console.log(`${player.name} joined room #${roomId}`);
     } catch (e) {
       console.log('handle join room error');

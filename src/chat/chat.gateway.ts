@@ -11,7 +11,6 @@ import { RoomsService } from '../rooms/rooms.service';
 import { wsEvents } from '../constants/wsEvents';
 import { MessageInterface } from './message.interface';
 
-@Injectable()
 @WebSocketGateway({ namespace: '/chat' })
 export class ChatGateway implements OnGatewayInit {
   @WebSocketServer() wss: Server;

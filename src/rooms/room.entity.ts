@@ -1,5 +1,8 @@
-import { RoomInterface, RoomRound, RoomSettings } from './room.interface';
+import { KEYWORDS } from '../constants/keywords';
 import { PlayerInterface } from '../player/player.interface';
+import { PlayerEntity } from '../player/player.entity';
+import { MessageInterface } from '../chat/message.interface';
+import { RoomInterface } from './room.interface';
 
 export class RoomEntity implements RoomInterface {
   settings = {
@@ -10,11 +13,12 @@ export class RoomEntity implements RoomInterface {
   players = {};
   round = {
     isOn: false,
-    roundNo: 1,
+    roundNo: 0,
     drawingPlayerId: '',
     keyword: '',
     timer: 0,
   };
+  winnerId = '';
 
   constructor(roomId: string) {
     this.settings.roomId = roomId;
@@ -28,7 +32,7 @@ export class RoomEntity implements RoomInterface {
     }
   }
 
-  leaveRoom(playerId: string) {
+  leaveRoom(playerId: string): RoomEntity {
     if (this.players[playerId]) {
       delete this.players[playerId];
 
@@ -37,18 +41,16 @@ export class RoomEntity implements RoomInterface {
         this.setNewAdmin(playersArray[0].id);
       }
     }
+
+    return this;
   }
 
-  updatePlayer(player: PlayerInterface) {
-    if (this.players[player.id]) {
-      this.players[player.id] = player;
+  updatePlayer(props: PlayerInterface) {
+    if (this.players[props.id]) {
+      this.players[props.id].updatePlayer(props);
 
       return this.players;
     }
-  }
-
-  updateRound(round: RoomRound) {
-    this.round = { ...this.round, ...round };
   }
 
   setNewAdmin(playerId: string) {
@@ -57,7 +59,80 @@ export class RoomEntity implements RoomInterface {
     }
   }
 
-  setGameLength(length: number) {
-    this.settings.gameLength = length;
+  setDrawingPlayer(playerId?: string): string {
+    if (playerId) {
+      this.round.drawingPlayerId = playerId;
+      return playerId;
+    }
+
+    const playersArray = Object.values(this.players) as PlayerInterface[];
+    const drawingPlayerIndex =
+      playersArray.findIndex(player => player.id === this.round.drawingPlayerId);
+
+    if (drawingPlayerIndex === -1 || drawingPlayerIndex + 1 > playersArray.length - 1) {
+      this.round.drawingPlayerId = playersArray[0].id;
+    } else {
+      this.round.drawingPlayerId = playersArray[drawingPlayerIndex + 1].id;
+    }
+
+    return this.round.drawingPlayerId;
+  }
+
+  countdownTimer(valueToCountDown: number): number {
+    if (this.round.timer > 0) {
+      this.round.timer -= valueToCountDown;
+    }
+    return this.round.timer;
+  }
+
+  setKeyword() {
+    const keywordsIndexes = [];
+    const min = 0;
+    const max = KEYWORDS.length - 1;
+
+    while (keywordsIndexes.length < 3) {
+      const randomIndex = Math.floor(Math.random() * (max - min + 1)) + min;
+      if (!keywordsIndexes.includes(randomIndex)) {
+        keywordsIndexes.push(randomIndex);
+      }
+    }
+
+    this.round.keyword = KEYWORDS[keywordsIndexes[0]];
+    return this.round.keyword;
+  }
+
+  startRound(): RoomEntity {
+    this.round.isOn = true;
+    this.round.roundNo = this.round.roundNo + 1;
+    this.round.timer = 90;
+
+    return this;
+  }
+
+  endRound(): RoomEntity {
+    console.log(`${this.winnerId} is the winner`);
+    if (this.winnerId && this.players[this.winnerId]) {
+      this.players[this.winnerId].addScore(50);
+    }
+
+    const playersArray: PlayerEntity[] = Object.values(this.players);
+
+    this.round.keyword = '';
+    this.round.isOn = false;
+    this.round.timer = 0;
+    this.winnerId = '';
+    playersArray.forEach(player => player.isReady = false);
+
+    return this;
+  }
+
+  validateMessage(message: MessageInterface): boolean {
+    const isCorrect =
+      message.content.toLowerCase() === this.round.keyword.toLowerCase()
+      && !this.winnerId;
+
+    if (isCorrect) this.winnerId = message.senderId;
+
+    return isCorrect;
   }
 }

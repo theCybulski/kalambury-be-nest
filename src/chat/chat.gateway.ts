@@ -1,25 +1,23 @@
 import {
-  OnGatewayDisconnect,
   OnGatewayInit,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { Logger } from '@nestjs/common';
-import { MessageInterface } from './message.interface';
-import { PlayerEntity } from '../player/player.entity';
-import { RoomsService } from '../rooms/rooms.service';
-import { ChatService } from './chat.service';
-import { wsEvents } from '../shared/constants';
+import { Injectable, Logger } from '@nestjs/common';
 
+import { RoomsService } from '../rooms/rooms.service';
+import { wsEvents } from '../constants/wsEvents';
+import { MessageInterface } from './message.interface';
+
+@Injectable()
 @WebSocketGateway({ namespace: '/chat' })
 export class ChatGateway implements OnGatewayInit {
   @WebSocketServer() wss: Server;
 
   constructor(
     private roomsService: RoomsService,
-    private chatService: ChatService,
   ) {
   }
 
@@ -30,9 +28,9 @@ export class ChatGateway implements OnGatewayInit {
   }
 
   @SubscribeMessage(wsEvents.toServer.chat.toServer)
-  handleMessage(client: Server, message: MessageInterface) {
-    console.log(message);
-    const isCorrect = this.chatService.validateMessage(message);
+  async handleMessage(client: Server, message: MessageInterface) {
+    const room = await this.roomsService.getRoomById(message.roomId);
+    const isCorrect = room.validateMessage(message);
     this.wss.to(message.roomId).emit(wsEvents.toClient.chat.toClient, { ...message, isCorrect });
   }
 
@@ -44,12 +42,14 @@ export class ChatGateway implements OnGatewayInit {
   }
 
   @SubscribeMessage(wsEvents.toServer.leaveRoom)
-  handleLeaveRoom(client: Socket) {
-    const player = this.roomsService.getPlayers(client.id);
+  async handleLeaveRoom(client: Socket) {
+    try {
+      const player = await this.roomsService.getPlayerById(client.id);
 
-    if (player) {
       client.leave(player.roomId);
       client.emit(wsEvents.toClient.leftRoom, player.roomId);
+    } catch (e) {
+      console.log('chat - handle leave room error');
     }
   }
 }

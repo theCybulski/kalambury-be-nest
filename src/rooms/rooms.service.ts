@@ -1,13 +1,17 @@
+import { Injectable, NotFoundException } from '@nestjs/common';
+
 import { PlayerInterface } from '../player/player.interface';
-import { RoomEntity } from './room.entity';
-import { Injectable } from '@nestjs/common';
 import { PlayerEntity } from '../player/player.entity';
-import { CreateRoomDto } from './dto/create-room.dto';
+import { RoomEntity } from './room.entity';
 
 @Injectable()
 export class RoomsService {
   onlinePlayers = {};
   roomsList = {};
+
+  constructor() {
+    this.createRoom('testRoom');
+  }
 
   private addPlayer(player: PlayerInterface) {
     this.onlinePlayers = {
@@ -19,55 +23,82 @@ export class RoomsService {
     delete this.onlinePlayers[playerId];
   }
 
-  joinRoom(roomId: string, player: PlayerInterface) {
-    const room = this.roomsList[roomId];
+  async joinRoom(roomId: string, player: PlayerInterface): Promise<RoomEntity> {
+    try {
+      const room = await this.getRoomById(roomId);
 
-    if (room) {
       room.joinRoom(player);
       this.addPlayer(player);
 
       return room;
+    } catch (e) {
+      console.log('ERROR JOINROOM SERVICE');
     }
   }
 
-  leaveRoom(playerId: string) {
-    const player = this.onlinePlayers[playerId];
-    const room = this.roomsList[player?.roomId];
-
-    if (room) {
-      room.leaveRoom(playerId);
-      this.removePlayer(playerId);
-
-      const roomIsEmpty = Object.keys(room.players).length === 0;
-      if (roomIsEmpty) {
-        delete this.roomsList[room.settings.roomId];
-      }
-    }
-  }
-
-  getPlayers(playerId?: string) {
-    if (playerId) return this.onlinePlayers[playerId];
-
-    return this.onlinePlayers;
-  }
-
-  getRoomsList() {
-    return this.roomsList;
-  }
-
-  createRoom() {
+  createRoom(roomId?: string): string {
     const roomsIds = Object.keys(this.roomsList);
-    let roomId;
+    let newRoomId = roomId;
 
-    do {
-      roomId = Math.floor(Math.random() * (999999 - 100000) + 100000).toString();
-    } while (roomsIds.includes(roomId));
+    if (!roomId) {
+      do {
+        newRoomId = Math.floor(Math.random() * (999999 - 100000) + 100000).toString();
+      } while (roomsIds.includes(roomId));
+    }
 
-    const newRoom = new RoomEntity(roomId);
+    const newRoom = new RoomEntity(newRoomId);
     this.roomsList = {
       ...this.roomsList, [newRoom.settings.roomId]: newRoom,
     };
 
     return newRoom.settings.roomId;
+  }
+
+  async leaveRoom(playerId: string): Promise<RoomEntity> {
+    try {
+      const player = await this.getPlayerById(playerId);
+      const room = await this.getRoomById(player.roomId);
+
+      const leftRoom = room.leaveRoom(playerId);
+      this.removePlayer(playerId);
+
+      const isRoomEmpty = Object.keys(room.players).length === 0;
+      if (isRoomEmpty) {
+        delete this.roomsList[room.settings.roomId];
+        return;
+      }
+
+      return leftRoom;
+    } catch (e) {
+      console.log('leave room service error');
+    }
+  }
+
+  getPlayers() {
+    return this.onlinePlayers;
+  }
+
+  async getPlayerById(playerId?: string): Promise<PlayerEntity> {
+    const found = await this.onlinePlayers[playerId];
+
+    if (!found) {
+      throw new NotFoundException(`Player with id ${playerId} not found!`);
+    }
+
+    return found;
+  }
+
+  getRooms() {
+    return this.roomsList;
+  }
+
+  async getRoomById(roomId: string): Promise<RoomEntity> {
+    const found = await this.roomsList[roomId];
+
+    if (!found) {
+      throw new NotFoundException(`Room with ID "${roomId}" not found`);
+    }
+
+    return found;
   }
 }

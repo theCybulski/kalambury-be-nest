@@ -5,13 +5,16 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import { RoomsService } from './rooms.service';
 import { Server, Socket } from 'socket.io';
-import { Logger } from '@nestjs/common';
+import { forwardRef, Inject, Logger } from '@nestjs/common';
+
 import { PlayerEntity } from '../player/player.entity';
-import { socketErrorToClient } from '../utils/socketErrorToClient';
-import { wsEvents } from '../shared/constants';
+import { socketErrorToClient } from '../utils/socket-error-to-client';
+import { wsEvents } from '../constants/wsEvents';
 import { PlayerInterface } from '../player/player.interface';
+import { ChatGateway } from '../chat/chat.gateway';
+import { sendSystemMessage } from '../utils/send-system-message';
+import { RoomsService } from './rooms.service';
 
 @WebSocketGateway({ namespace: '/room' })
 export class RoomGateway implements OnGatewayInit, OnGatewayDisconnect {
@@ -19,22 +22,21 @@ export class RoomGateway implements OnGatewayInit, OnGatewayDisconnect {
 
   constructor(
     private roomsService: RoomsService,
+    @Inject(forwardRef(() => ChatGateway))
+    private chatGateway: ChatGateway,
   ) {
   }
 
   private logger: Logger = new Logger('RoomGateway');
 
-  handleDisconnect(client: Socket) {
-    const player = this.roomsService.getPlayers(client.id);
+  async handleDisconnect(client: Socket) {
+    try {
+      const room = await this.roomsService.leaveRoom(client.id);
 
-    if (player) {
-      this.roomsService.leaveRoom(client.id);
-      const room = this.roomsService.roomsList[player.roomId];
-
-      if (room) {
-        this.wss.to(player.roomId).emit(wsEvents.toClient.round.updateSettings, { ...this.roomsService.roomsList[player.roomId].settings });
-        this.wss.to(player.roomId).emit(wsEvents.toClient.round.updatePlayers, Object.values(room.players));
-      }
+      this.wss.to(room.settings.roomId).emit(wsEvents.toClient.round.updateSettings, { ...room.settings });
+      this.wss.to(room.settings.roomId).emit(wsEvents.toClient.round.updatePlayers, Object.values(room.players));
+    } catch (e) {
+      console.log('handle disconnect error', e);
     }
   }
 
@@ -43,59 +45,94 @@ export class RoomGateway implements OnGatewayInit, OnGatewayDisconnect {
   }
 
   @SubscribeMessage(wsEvents.toServer.joinRoom)
-  handleJoinRoom(client: Socket, { roomId, name }) {
-    const room = this.roomsService.roomsList[roomId];
+  async handleJoinRoom(client: Socket, { roomId, name }) {
+    const player = new PlayerEntity(name, client.id, roomId);
 
-    if (room) {
+    try {
+      const room = await this.roomsService.joinRoom(roomId, player);
+      const roomForClient = { ...room, players: Object.values(room.players) };
+
       client.join(roomId);
 
-      const player = new PlayerEntity(name, client.id, roomId);
-      const room = this.roomsService.joinRoom(roomId, player);
-      console.log(`${player.name} joined room #${roomId}`);
-
-      const newRoom = { ...room, players: Object.values(room.players) };
-
-      client.emit(wsEvents.toClient.joinedRoom, { player, room: newRoom });
+      client.emit(wsEvents.toClient.joinedRoom, { player, room: roomForClient });
       this.wss.to(roomId).emit(wsEvents.toClient.round.updatePlayers, Object.values(room.players));
-    } else {
+      sendSystemMessage(this.chatGateway.wss, roomId, `${player.name} joined the room`);
+      console.log(`${player.name} joined room #${roomId}`);
+    } catch (e) {
+      console.log('handle join room error');
       socketErrorToClient(client, 404, `Room ${roomId} not found`);
     }
   }
 
   @SubscribeMessage(wsEvents.toServer.leaveRoom)
-  handleLeaveRoom(client: Socket, roomId) {
-    const player = this.roomsService.getPlayers(client.id);
-    const room = this.roomsService.roomsList[roomId];
-    this.roomsService.leaveRoom(client.id);
+  async handleLeaveRoom(client: Socket, roomId) {
+    try {
+      const player = await this.roomsService.getPlayerById(client.id);
 
-    if (player) {
+      this.roomsService.leaveRoom(player.id);
       client.leave(roomId);
-      console.log(`${player.name} left room #${player.roomId}`);
       client.emit(wsEvents.toClient.leftRoom, player.roomId);
-    }
 
-    if (room) {
-      this.wss.to(roomId).emit(wsEvents.toClient.round.updateSettings, { ...this.roomsService.roomsList[player.roomId].settings });
+      console.log(`${player.name} left room #${player.roomId}`);
+
+      const room = await this.roomsService.getRoomById(roomId);
+
+      this.wss.to(roomId).emit(wsEvents.toClient.round.updateSettings, { ...room.settings });
       this.wss.to(roomId).emit(wsEvents.toClient.round.updatePlayers, Object.values(room.players));
+    } catch (e) {
+      console.log('handle leave room error', e);
     }
   }
 
+  // TODO: Disallow client to update players with PlayerInterface - risk of score manipulation
   @SubscribeMessage(wsEvents.toServer.round.updatePlayers)
-  handleUpdatePlayer(client: Socket, player: PlayerInterface) {
-    const room = this.roomsService.roomsList[player.roomId];
-    const updatedPlayers = room.updatePlayer(player);
+  async handleUpdatePlayer(client: Socket, player: PlayerInterface) {
+    try {
+      const room = await this.roomsService.getRoomById(player.roomId);
 
-    if (room) {
+      const updatedPlayers = room.updatePlayer(player);
       this.wss.to(player.roomId).emit(wsEvents.toClient.round.updatePlayers, Object.values(updatedPlayers));
+    } catch (e) {
+      console.log('handle update player error', e);
     }
   }
 
   @SubscribeMessage(wsEvents.toServer.round.flipchart)
   handleFlipchart(client: Socket, { data, roomId }) {
-    const room = this.roomsService.roomsList[roomId];
+    this.wss.to(roomId).emit(wsEvents.toClient.round.flipchart, data);
+  }
 
-    if (room) {
-      this.wss.to(roomId).emit(wsEvents.toClient.round.flipchart, data);
+  @SubscribeMessage(wsEvents.toServer.round.start)
+  async handleStartRound(client: Socket, { roomId }) {
+    try {
+      const room = await this.roomsService.getRoomById(roomId);
+
+      room.setKeyword();
+      room.setDrawingPlayer();
+      const startedRoundRoom = room.startRound();
+
+      this.wss.to(roomId).emit(wsEvents.toClient.round.updateRound, { ...startedRoundRoom.round });
+
+      const timerInterval = setInterval(async () => {
+        try {
+          await this.roomsService.getRoomById(roomId);
+          const timer = room.countdownTimer(1);
+
+          this.wss.to(roomId).emit(wsEvents.toClient.round.updateTimer, { timer });
+
+          if (room.winnerId || timer <= 0) {
+            clearInterval(timerInterval);
+            const endedRoundRoom = room.endRound();
+            this.wss.to(roomId).emit(wsEvents.toClient.round.updateRound, { ...endedRoundRoom.round });
+            this.wss.to(roomId).emit(wsEvents.toClient.round.updatePlayers, Object.values(endedRoundRoom.players));
+          }
+
+        } catch (e) {
+          clearTimeout(timerInterval);
+        }
+      }, 1000);
+    } catch (e) {
+      console.log('handle start round error');
     }
   }
 }

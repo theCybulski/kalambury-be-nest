@@ -20,4 +20,5 @@ export interface RoomInterface {
     [playerId: string]: PlayerInterface
   }
   round: RoomRound
+  // joinRoom(player: PlayerInterface): void;
 }

@@ -13,11 +13,14 @@ export class PlayerEntity implements PlayerInterface {
     this.roomId = roomId;
   }
 
-  updateScore(score: number) {
-    this.score = score;
+  updatePlayer(props: PlayerInterface) {
+    this.name = props.name;
+    this.score = props.score;
+    this.isReady = props.isReady;
+    this.roomId = props.roomId;
   }
 
-  updateIsReady(isReady: boolean) {
-    this.isReady = isReady;
+  addScore(count: number) {
+    this.score += count;
   }
 }

@@ -11,7 +11,8 @@ export type RoomRound = {
   roundNo: number;
   drawingPlayerId: string;
   keyword: string;
-  timer: number;
+  startedAt: Date;
+  length: number;
 };
 
 export interface RoomInterface {
@@ -20,5 +21,4 @@ export interface RoomInterface {
     [playerId: string]: PlayerInterface
   }
   round: RoomRound
-  // joinRoom(player: PlayerInterface): void;
 }

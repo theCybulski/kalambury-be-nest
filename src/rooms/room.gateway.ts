@@ -102,32 +102,9 @@ export class RoomGateway implements OnGatewayInit, OnGatewayDisconnect {
     try {
       const room = await this.roomsService.getRoomById(roomId);
 
-      room.setKeyword();
-      room.setDrawingPlayer();
-      const startedRoundRoom = room.startRound();
-
-      this.wss.to(roomId).emit(wsEvents.toClient.round.updateRound, { ...startedRoundRoom.round });
-
-      // TODO: Consider storing only start time and calculating timer on FE
-      const timerInterval = setInterval(async () => {
-        try {
-          await this.roomsService.getRoomById(roomId);
-          const timer = room.countdownTimer(1);
-
-          this.wss.to(roomId).emit(wsEvents.toClient.round.updateTimer, { timer });
-
-          if (room.winnerId || timer <= 0) {
-            clearInterval(timerInterval);
-            const endedRoundRoom = room.endRound();
-            this.wss.to(roomId).emit(wsEvents.toClient.round.updateRound, { ...endedRoundRoom.round });
-            this.wss.to(roomId).emit(wsEvents.toClient.round.updatePlayers, Object.values(endedRoundRoom.players));
-          }
-
-        } catch (e) {
-          clearTimeout(timerInterval);
-        }
-      }, 1000);
+      room.startRound(this.wss);
     } catch (e) {
+      console.log(e);
       console.log('handle start round error');
     }
   }

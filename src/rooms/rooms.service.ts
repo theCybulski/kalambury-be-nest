@@ -3,6 +3,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PlayerInterface } from '../player/player.interface';
 import { PlayerEntity } from '../player/player.entity';
 import { RoomEntity } from './room.entity';
+import { Server } from 'socket.io';
 
 @Injectable()
 export class RoomsService {
@@ -64,6 +65,7 @@ export class RoomsService {
 
       const isRoomEmpty = Object.keys(room.players).length === 0;
       if (isRoomEmpty) {
+        room.cleanUp();
         delete this.roomsList[room.settings.roomId];
         return;
       }

@@ -3,6 +3,8 @@ import { PlayerInterface } from '../player/player.interface';
 import { PlayerEntity } from '../player/player.entity';
 import { MessageInterface } from '../chat/message.interface';
 import { RoomInterface } from './room.interface';
+import { Server } from 'socket.io';
+import { wsEvents } from '../constants/wsEvents';
 
 export class RoomEntity implements RoomInterface {
   settings = {
@@ -16,9 +18,12 @@ export class RoomEntity implements RoomInterface {
     roundNo: 0,
     drawingPlayerId: '',
     keyword: '',
-    timer: 0,
+    startedAt: null,
+    length: 10000,
   };
   winnerId = '';
+
+  private roundInterval: NodeJS.Timeout;
 
   constructor(roomId: string) {
     this.settings.roomId = roomId;
@@ -35,10 +40,13 @@ export class RoomEntity implements RoomInterface {
   leaveRoom(playerId: string): RoomEntity {
     if (this.players[playerId]) {
       delete this.players[playerId];
+      const isAdmin = this.settings.adminId === playerId;
+      const isDrawingPlayer = this.round.drawingPlayerId === playerId;
 
       const playersArray: PlayerInterface[] = Object.values(this.players);
-      if (this.settings.adminId === playerId && playersArray.length >= 1) {
-        this.setNewAdmin(playersArray[0].id);
+      if (playersArray.length >= 1) {
+        if (isAdmin) this.setNewAdmin(playersArray[0].id);
+        if (isDrawingPlayer) this.setDrawingPlayer(null, true)
       }
     }
 
@@ -59,7 +67,12 @@ export class RoomEntity implements RoomInterface {
     }
   }
 
-  setDrawingPlayer(playerId?: string): string {
+  setDrawingPlayer(playerId?: string, isEmpty?: boolean): string {
+    if (isEmpty) {
+      this.round.drawingPlayerId = '';
+      return;
+    }
+
     if (playerId) {
       this.round.drawingPlayerId = playerId;
       return playerId;
@@ -78,13 +91,6 @@ export class RoomEntity implements RoomInterface {
     return this.round.drawingPlayerId;
   }
 
-  countdownTimer(valueToCountDown: number): number {
-    if (this.round.timer > 0) {
-      this.round.timer -= valueToCountDown;
-    }
-    return this.round.timer;
-  }
-
   setKeyword() {
     const keywordsIndexes = [];
     const min = 0;
@@ -101,16 +107,37 @@ export class RoomEntity implements RoomInterface {
     return this.round.keyword;
   }
 
-  startRound(): RoomEntity {
+  startRound(wss: Server): RoomEntity {
+    this.setKeyword();
+    this.setDrawingPlayer();
     this.round.isOn = true;
     this.round.roundNo = this.round.roundNo + 1;
-    this.round.timer = 90;
+    this.round.startedAt = new Date();
+
+    wss.to(this.settings.roomId).emit(wsEvents.toClient.round.updateRound, { ...this.round });
+    this.roundLoop(wss);
 
     return this;
   }
 
-  endRound(): RoomEntity {
+  roundLoop(wss: Server) {
+    this.roundInterval = setInterval(() => {
+        console.log('round loop');
+        const drawingPlayer = this.round.drawingPlayerId
+        const currentTime = new Date().getTime();
+        const startTime = this.round.startedAt.getTime();
+
+        const isTimeUp = currentTime - startTime >= this.round.length;
+
+        if (this.winnerId || !drawingPlayer || isTimeUp) {
+          this.endRound(wss);
+        }
+      }, 1000);
+  }
+
+  endRound(wss: Server): RoomEntity {
     console.log(`${this.winnerId} is the winner`);
+    clearInterval(this.roundInterval);
     if (this.winnerId && this.players[this.winnerId]) {
       this.players[this.winnerId].addScore(50);
     }
@@ -119,9 +146,14 @@ export class RoomEntity implements RoomInterface {
 
     this.round.keyword = '';
     this.round.isOn = false;
-    this.round.timer = 0;
+    this.round.startedAt = null;
     this.winnerId = '';
     playersArray.forEach(player => player.isReady = false);
+
+    this.setDrawingPlayer(null, true)
+
+    wss.to(this.settings.roomId).emit(wsEvents.toClient.round.updateRound, { ...this.round });
+    wss.to(this.settings.roomId).emit(wsEvents.toClient.round.updatePlayers, Object.values(this.players));
 
     return this;
   }
@@ -134,5 +166,9 @@ export class RoomEntity implements RoomInterface {
     if (isCorrect) this.winnerId = message.senderId;
 
     return isCorrect;
+  }
+
+  cleanUp() {
+    clearInterval(this.roundInterval);
   }
 }

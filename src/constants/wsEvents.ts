@@ -22,7 +22,6 @@ export const wsEvents = {
       updateSettings: 'updateSettingsToClient',
       updateRound: 'updateRoundToClient',
       flipchart: 'flipchartToClient',
-      updateTimer: 'updateTimerToClient',
     },
     chat: {
       toClient: 'chatToClient',

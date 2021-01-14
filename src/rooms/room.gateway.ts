@@ -108,6 +108,7 @@ export class RoomGateway implements OnGatewayInit, OnGatewayDisconnect {
 
       this.wss.to(roomId).emit(wsEvents.toClient.round.updateRound, { ...startedRoundRoom.round });
 
+      // TODO: Consider storing only start time and calculating timer on FE
       const timerInterval = setInterval(async () => {
         try {
           await this.roomsService.getRoomById(roomId);

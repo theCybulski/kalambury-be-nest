@@ -1,4 +1,5 @@
 import { PlayerInterface } from '../player/player.interface';
+import { Keyword } from '../constants/keywords/keywords';
 
 export type RoomSettings = {
   roomId: string;
@@ -10,7 +11,7 @@ export type RoomRound = {
   isOn: boolean
   roundNo: number;
   drawingPlayerId: string;
-  keyword: string;
+  keyword: Keyword;
   startedAt: Date;
   length: number;
 };

@@ -1,4 +1,4 @@
-import { KEYWORDS } from '../constants/keywords';
+import { KEYWORDS } from '../constants/keywords/keywords';
 import { PlayerInterface } from '../player/player.interface';
 import { PlayerEntity } from '../player/player.entity';
 import { MessageInterface } from '../chat/message.interface';
@@ -17,9 +17,9 @@ export class RoomEntity implements RoomInterface {
     isOn: false,
     roundNo: 0,
     drawingPlayerId: '',
-    keyword: '',
+    keyword: null,
     startedAt: null,
-    length: 10000,
+    length: 90000,
   };
   winnerId = '';
 
@@ -144,7 +144,7 @@ export class RoomEntity implements RoomInterface {
 
     const playersArray: PlayerEntity[] = Object.values(this.players);
 
-    this.round.keyword = '';
+    this.round.keyword = null;
     this.round.isOn = false;
     this.round.startedAt = null;
     this.winnerId = '';
@@ -160,7 +160,7 @@ export class RoomEntity implements RoomInterface {
 
   validateMessage(message: MessageInterface): boolean {
     const isCorrect =
-      message.content.toLowerCase() === this.round.keyword.toLowerCase()
+      message.content.toLowerCase() === this.round.keyword.keyword.toLowerCase()
       && !this.winnerId;
 
     if (isCorrect) this.winnerId = message.senderId;
